@@ -21,7 +21,7 @@ extension Adjustments.RootView {
             ForEach(state.scheduledTempTargets) { tempTarget in
                 tempTargetView(for: tempTarget)
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        swipeActionsForTempTargets(for: tempTarget)
+                        actionButtonsForTempTargets(for: tempTarget, deleteRole: nil)
                     }
             }
             .listRowBackground(Color.chart)
@@ -34,22 +34,16 @@ extension Adjustments.RootView {
         Section {
             ForEach(state.tempTargetPresets) { preset in
                 tempTargetView(for: preset, showCheckmark: showTempTargetCheckmark) {
-                    enactTempTargetPreset(preset)
+                    requestTempTargetPresetActivation(preset)
+                }
+                .contextMenu {
+                    actionButtonsForTempTargets(for: preset)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    swipeActionsForTempTargets(for: preset)
+                    actionButtonsForTempTargets(for: preset, deleteRole: nil)
                 }
             }
             .onMove(perform: state.reorderTempTargets)
-            .confirmationDialog(
-                deleteConfirmationTitle,
-                isPresented: $isConfirmDeletePresented,
-                titleVisibility: .visible
-            ) {
-                deleteConfirmationButtons()
-            } message: {
-                deleteConfirmationMessage
-            }
             .listRowBackground(Color.chart)
         } header: {
             Text("Temporary Target Presets")
@@ -61,77 +55,69 @@ extension Adjustments.RootView {
         }
     }
 
-    private func enactTempTargetPreset(_ preset: TempTargetStored) {
-        Task {
-            let objectID = preset.objectID
-            await state.enactTempTargetPreset(withID: objectID)
-            selectedTempTargetPresetID = preset.id?.uuidString
-            showTempTargetCheckmark = true
+    private func requestTempTargetPresetActivation(_ preset: TempTargetStored) {
+        let activation = PendingPresetActivation.tempTarget(
+            objectID: preset.objectID,
+            presetID: preset.id?.uuidString,
+            name: preset.name ?? ""
+        )
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                showTempTargetCheckmark = false
-            }
-        }
+        requestPresetActivation(activation)
     }
 
-    private func swipeActionsForTempTargets(for tempTarget: TempTargetStored) -> some View {
+    private func actionButtonsForTempTargets(
+        for tempTarget: TempTargetStored,
+        deleteRole: ButtonRole? = .destructive
+    ) -> some View {
         Group {
-            Button {
-                Task {
-                    selectedTempTarget = tempTarget
-                    isConfirmDeletePresented = true
-                }
+            Button(role: deleteRole) {
+                tempTargetToDelete = tempTarget
             } label: {
                 Label("Delete", systemImage: "trash.fill")
-                    .tint(.red)
             }
-            Button(action: {
+            .tint(.red)
+            Button {
                 selectedTempTarget = tempTarget
                 state.showTempTargetEditSheet = true
-            }, label: {
+            } label: {
                 Label("Edit", systemImage: "pencil")
-                    .tint(.blue)
-            })
+            }
+            .tint(.blue)
         }
     }
 
-    private var deleteConfirmationTitle: String {
-        let presetName = selectedTempTarget?.name ?? ""
-        return String(
-            localized: "Delete the Temp Target Preset \"\(presetName)\"?",
-            comment: "Delete confirmation title for temporary target presets"
-        )
-    }
-
-    private func deleteConfirmationButtons() -> some View {
-        Group {
-            if let itemToDelete = selectedTempTarget {
-                Button(
-                    state.currentActiveTempTarget == selectedTempTarget ? "Stop and Delete" : "Delete",
-                    role: .destructive
-                ) {
-                    if state.currentActiveTempTarget == selectedTempTarget {
-                        Task {
-                            await state.disableAllActiveTempTargets(createTempTargetRunEntry: true)
-                        }
-                    }
+    func tempTargetDeleteConfirmation(_ content: some View) -> some View {
+        content.confirmationDialog(
+            String(
+                localized: "Delete the Temp Target Preset \"\(tempTargetToDelete?.name ?? "")\"?",
+                comment: "Delete confirmation title for temporary target presets"
+            ),
+            isPresented: Binding(
+                get: { tempTargetToDelete != nil },
+                set: { if !$0 { tempTargetToDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: tempTargetToDelete
+        ) { target in
+            Button(
+                state.currentActiveTempTarget == target ? "Stop and Delete" : "Delete",
+                role: .destructive
+            ) {
+                if state.currentActiveTempTarget == target {
                     Task {
-                        await state.invokeTempTargetPresetDeletion(itemToDelete.objectID)
+                        await state.disableAllActiveTempTargets(createTempTargetRunEntry: true)
                     }
-                    selectedTempTarget = nil
+                }
+                Task {
+                    await state.invokeTempTargetPresetDeletion(target.objectID)
                 }
             }
-            Button("Cancel", role: .cancel) {
-                selectedTempTarget = nil
+            Button("Cancel", role: .cancel) {}
+        } message: { target in
+            if state.currentActiveTempTarget == target {
+                Text("This Temp Target preset is currently running. Deleting will stop it.")
             }
         }
-    }
-
-    private var deleteConfirmationMessage: Text? {
-        if state.currentActiveTempTarget == selectedTempTarget {
-            return Text("This Temp Target preset is currently running. Deleting will stop it.")
-        }
-        return nil
     }
 
     var stickyStopTempTargetButton: some View {

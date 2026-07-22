@@ -26,4 +26,29 @@ final class PropertyPersistentFlags {
 
     // TODO: This flag can be deleted in March 2027. Check the commit for other places to cleanup.
     @PersistedProperty(key: "hasSeenFatProteinOrderChange") var hasSeenFatProteinOrderChange: Bool?
+
+    // MARK: - Telemetry
+
+    //
+    // See Trio/Sources/Services/Telemetry/TelemetryClient.swift.
+    // `telemetryEnabled` gates the anonymous-usage POST. `diagnosticsSharingEnabled`
+    // remains the Crashlytics gate. Both streams are on by default: `nil` means
+    // enabled; only an explicit `false` (Settings → Features → App Diagnostics) opts out.
+    @PersistedProperty(key: "telemetryEnabled") var telemetryEnabled: Bool?
+    @PersistedProperty(key: "telemetryLastSentAt") var telemetryLastSentAt: Date?
+    @PersistedProperty(key: "telemetryLastSentSha") var telemetryLastSentSha: String?
+    // Sliding 7-day window of cold-launch timestamps; count is sent as `coldLaunches7d`.
+    @PersistedProperty(key: "telemetryColdLaunchTimes") var telemetryColdLaunchTimes: [Date]?
+    // Stable per-install UUID. IDFV resets when the user removes all Trio-team apps;
+    // this survives independently and is wiped only by deleting Trio itself.
+    @PersistedProperty(key: "telemetryInstallId") var telemetryInstallId: String?
+
+    // App Attest "give up" signal — set on a 403 from /api/attest/register, meaning
+    // the server has rejected this app_id and there's no point retrying.
+    @PersistedProperty(key: "telemetryAttestForbidden") var telemetryAttestForbidden: Bool?
+
+    // Debug override for the telemetry server base URL. Empty/unset → use the
+    // production constant in TelemetryClient. Surfaced as a hidden field in
+    // App Diagnostics for local testing against a dev server.
+    @PersistedProperty(key: "telemetryDebugServerURL") var telemetryDebugServerURL: String?
 }
